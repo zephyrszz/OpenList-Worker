@@ -27,7 +27,7 @@
   "main": "src/backend/worker.ts",
   "compatibility_date": "2026-08-04",
   "compatibility_flags": ["nodejs_compat"],
-  "workers_dev": false,
+  "workers_dev": true,
   "preview_urls": false,
 
   "assets": {
@@ -46,7 +46,7 @@
     //   map（默认）- 整对象序列化为单个 JSON 键值，适合 KV/Blob
     //   key        - 分 key 存储，每实体一条记录（如 users_1）
     //   sql        - 关系表格式，与 Go 后端一致（适用于 D1/MySQL）
-    "DB_FORMAT": "map",
+    "DB_FORMAT": "sql",
 
     // 数据库驱动：
     //   auto（默认）- 自动检测，顺序 mysql → d1 → kv → cfkv → blob → do
@@ -57,7 +57,7 @@
     //   do         - Cloudflare Durable Objects（需下方 durable_objects）
     //   mysql      - 外部 MySQL（需 MYSQL_URLS 或 MYSQL_HOST 等，仅 Node 运行时）
     // 说明：mysql 仅在配置了连接信息时才参与 auto 探测，避免无谓的 TCP 建连。
-    "DB_DRIVER": "auto",
+    "DB_DRIVER": "d1",
 
     // ── 安全鉴权（推荐以 Secret 类型配置，见 .dev.vars.example）──────────
     //
@@ -119,35 +119,28 @@
   // ===========================================================================
   // 存储绑定
   // ===========================================================================
+  // 本次部署启用两个绑定：D1 作为主数据库，KV 供缓存使用。
+
+  // ▶ KV：省略 id 由 wrangler 自动预配创建 openlist-tsworkers-kv。
+  //   注意不能写成 "id": "" —— wrangler 校验会拒绝空字符串 id。
+  //   Workers Builds 自动创建的 Token 默认带 KV 权限，这一项无需手动处理。
+  "kv_namespaces": [{ "binding": "KV" }],
+
+  // ▶ D1：本次选用的主数据库（DB_FORMAT=sql + DB_DRIVER=d1）
+  //   ⚠️ 请务必先手动创建数据库，再把 Database ID 填进 database_id。
+  //   原因：Workers Builds 自动创建的 API Token 默认【不含 D1 权限】，
+  //   依赖 wrangler 自动建库会直接失败。
   //
-  // ▶ 方案 A：KV（默认启用，免费额度大、最通用）
-  //   ⚠️ 必须【完全省略 id 字段】，不能写成 "id": ""：
-  //      wrangler 配置校验会拒绝空字符串 id（"should have a string id field"）。
-  //   省略 id 后：首次部署由 wrangler 自动创建 openlist-tsworkers-kv 并绑定；
-  //   二次部署通过 inherit 复用已有绑定，不会重复创建。
-  //   若想改用账户里已有的 KV，把该命名空间的 id 填进来即可。
+  //   获取方式：Cloudflare 控制台 → Workers & Pages → D1 SQL database
+  //             → Create database → 名称填 openlist → 创建后复制那一行的 UUID
   //
-  //  "kv_namespaces": [{ "binding": "KV" }],
-  //
-  // ▶ 方案 B：D1（关系型，可与 Go 后端共享库；DB_FORMAT 建议改为 "sql"）
-  //   控制台：Workers & Pages → D1 → 创建数据库 → 绑定到 Worker，变量名填 DB
-  //   省略 database_id 时，wrangler >= 4.45.0 会自动创建同名库并回写
-  //
-  // "d1_databases": [
-  //   { "binding": "DB", "database_name": "openlist", "database_id": "" }
-  // ],
-  //
-  // ▶ 方案 C：Durable Objects（内置 SQLite，强一致；DB_FORMAT 建议改为 "sql"）
-  //   注意：DO 需要 migrations，且删除成本高，适合单租户部署。
-  //
-  // "durable_objects": {
-  //   "bindings": [{ "name": "DO", "class_name": "OpenListDB" }]
-  // },
-  // "migrations": [
-  //   { "tag": "v1", "new_sqlite_classes": ["OpenListDB"] }
-  // ],
-  //
-  // ▶ 方案 D：Blob / MySQL
-  //   Blob 由 EdgeOne / ESA 自动注入，无需配置；
-  //   MySQL 通过 Secret 配置 MYSQL_URLS（或 MYSQL_HOST 等分项）。
+  //   （若你更想走自动预配：把 database_id 这一行整个删掉，然后去
+  //     My Profile → API Tokens，给构建用的 Token 加上 Account → D1 → Edit）
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "openlist",
+      "database_id": "在此粘贴 D1 的 Database ID"
+    }
+  ],
 }
